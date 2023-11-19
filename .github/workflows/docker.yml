@@ -14,6 +14,7 @@ on:
   push:
     branches:
       - master
+      - known-no-space-failure
 
 jobs:
   push_to_registry:
