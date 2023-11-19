@@ -92,11 +92,16 @@ int main(int argc, char ** argv) {
     // create a llama_batch with size 512
     // we use this object to submit token data for decoding
 
-    llama_batch batch = llama_batch_init(512, 0, 1);
+    llama_batch batch = llama_batch_init(512, 0);
 
     // evaluate the initial prompt
-    for (size_t i = 0; i < tokens_list.size(); i++) {
-        llama_batch_add(batch, tokens_list[i], i, { 0 }, false);
+    batch.n_tokens = tokens_list.size();
+
+    for (int32_t i = 0; i < batch.n_tokens; i++) {
+        batch.token[i]  = tokens_list[i];
+        batch.pos[i]    = i;
+        batch.seq_id[i] = 0;
+        batch.logits[i] = false;
     }
 
     // llama_decode will output logits only for the last token of the prompt
@@ -133,7 +138,7 @@ int main(int argc, char ** argv) {
             const llama_token new_token_id = llama_sample_token_greedy(ctx, &candidates_p);
 
             // is it an end of stream?
-            if (new_token_id == llama_token_eos(model) || n_cur == n_len) {
+            if (new_token_id == llama_token_eos(ctx) || n_cur == n_len) {
                 LOG_TEE("\n");
 
                 break;
@@ -143,10 +148,15 @@ int main(int argc, char ** argv) {
             fflush(stdout);
 
             // prepare the next batch
-            llama_batch_clear(batch);
+            batch.n_tokens = 0;
 
             // push this new token for next evaluation
-            llama_batch_add(batch, new_token_id, n_cur, { 0 }, true);
+            batch.token [batch.n_tokens] = new_token_id;
+            batch.pos   [batch.n_tokens] = n_cur;
+            batch.seq_id[batch.n_tokens] = 0;
+            batch.logits[batch.n_tokens] = true;
+
+            batch.n_tokens += 1;
 
             n_decode += 1;
         }

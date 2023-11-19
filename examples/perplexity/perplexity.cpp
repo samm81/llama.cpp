@@ -1,3 +1,4 @@
+#include "build-info.h"
 #include "common.h"
 #include "llama.h"
 
@@ -149,7 +150,8 @@ static results_perplexity perplexity_v2(llama_context * ctx, const gpt_params & 
     // Output: `perplexity: 13.5106 [114/114]`
     // BOS tokens will be added for each chunk before eval
 
-    const bool add_bos = llama_should_add_bos_token(llama_get_model(ctx));
+    const bool is_spm = llama_vocab_type(llama_get_model(ctx)) == LLAMA_VOCAB_TYPE_SPM;
+    const bool add_bos = is_spm;
 
     fprintf(stderr, "%s: tokenizing the input ..\n", __func__);
 
@@ -208,7 +210,7 @@ static results_perplexity perplexity_v2(llama_context * ctx, const gpt_params & 
         const auto t_start = std::chrono::high_resolution_clock::now();
 
         // clear the KV cache
-        llama_kv_cache_clear(ctx);
+        llama_kv_cache_tokens_rm(ctx, -1, -1);
 
         for (int j = 0; j < num_batches; ++j) {
             const int batch_start = start + j * n_batch;
@@ -225,7 +227,7 @@ static results_perplexity perplexity_v2(llama_context * ctx, const gpt_params & 
 
             // add BOS token for the first batch of each chunk
             if (add_bos && j == 0) {
-                tokens[batch_start] = llama_token_bos(llama_get_model(ctx));
+                tokens[batch_start] = llama_token_bos(ctx);
             }
 
             const auto batch_logits = llama_get_logits(ctx);
@@ -287,7 +289,8 @@ static results_perplexity perplexity(llama_context * ctx, const gpt_params & par
     // Output: `perplexity: 13.5106 [114/114]`
     // BOS tokens will be added for each chunk before eval
 
-    const bool add_bos = llama_should_add_bos_token(llama_get_model(ctx));
+    const bool is_spm = llama_vocab_type(llama_get_model(ctx)) == LLAMA_VOCAB_TYPE_SPM;
+    const bool add_bos = is_spm;
     const int n_ctx = llama_n_ctx(ctx);
 
     auto tim1 = std::chrono::high_resolution_clock::now();
@@ -336,7 +339,7 @@ static results_perplexity perplexity(llama_context * ctx, const gpt_params & par
         const auto t_start = std::chrono::high_resolution_clock::now();
 
         // clear the KV cache
-        llama_kv_cache_clear(ctx);
+        llama_kv_cache_tokens_rm(ctx, -1, -1);
 
         for (int j = 0; j < num_batches; ++j) {
             const int batch_start = start + j * n_batch;
@@ -347,7 +350,7 @@ static results_perplexity perplexity(llama_context * ctx, const gpt_params & par
 
             // add BOS token for the first batch of each chunk
             if (add_bos && j == 0) {
-                tokens[batch_start] = llama_token_bos(llama_get_model(ctx));
+                tokens[batch_start] = llama_token_bos(ctx);
             }
 
             if (llama_decode(ctx, llama_batch_get_one(tokens.data() + batch_start, batch_size, j * n_batch, 0))) {
@@ -479,7 +482,7 @@ static void hellaswag_score(llama_context * ctx, const gpt_params & params) {
     fprintf(stderr, "================================= is_spm = %d\n", is_spm);
 
     // This is needed as usual for LLaMA models
-    const bool add_bos = llama_should_add_bos_token(llama_get_model(ctx));
+    const bool add_bos = is_spm;
 
     // Number of tasks to use when computing the score
     if ( params.hellaswag_tasks < hs_task_count  ) {
@@ -570,7 +573,7 @@ static void hellaswag_score(llama_context * ctx, const gpt_params & params) {
         }
 
         // clear the KV cache
-        llama_kv_cache_clear(ctx);
+        llama_kv_cache_tokens_rm(ctx, -1, -1);
 
         auto logits = hellaswag_evaluate_tokens(ctx, query_embd, 0, params.n_batch, n_vocab);
         if (logits.empty()) {

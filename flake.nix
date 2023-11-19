@@ -11,7 +11,8 @@
         meta.mainProgram = "llama";
         inherit (pkgs.stdenv) isAarch32 isAarch64 isDarwin;
         buildInputs = with pkgs; [ openmpi ];
-        osSpecific = with pkgs; buildInputs ++ (
+        osSpecific = with pkgs; buildInputs ++
+        (
           if isAarch64 && isDarwin then
             with pkgs.darwin.apple_sdk_11_0.frameworks; [
               Accelerate
@@ -50,9 +51,6 @@
         };
         llama-python =
           pkgs.python3.withPackages (ps: with ps; [ numpy sentencepiece ]);
-        # TODO(Green-Sky): find a better way to opt-into the heavy ml python runtime
-        llama-python-extra =
-          pkgs.python3.withPackages (ps: with ps; [ numpy sentencepiece torchWithoutCuda transformers ]);
         postPatch = ''
           substituteInPlace ./ggml-metal.m \
             --replace '[bundle pathForResource:@"ggml-metal" ofType:@"metal"];' "@\"$out/bin/ggml-metal.metal\";"
@@ -95,15 +93,12 @@
         };
         packages.rocm = pkgs.stdenv.mkDerivation {
           inherit name src meta postPatch nativeBuildInputs postInstall;
-          buildInputs = with pkgs.rocmPackages; buildInputs ++ [ clr hipblas rocblas ];
+          buildInputs = with pkgs; buildInputs ++ [ hip hipblas rocblas ];
           cmakeFlags = cmakeFlags ++ [
             "-DLLAMA_HIPBLAS=1"
             "-DCMAKE_C_COMPILER=hipcc"
             "-DCMAKE_CXX_COMPILER=hipcc"
-            # Build all targets supported by rocBLAS. When updating search for TARGET_LIST_ROCM
-            # in github.com/ROCmSoftwarePlatform/rocBLAS/blob/develop/CMakeLists.txt
-            # and select the line that matches the current nixpkgs version of rocBLAS.
-            "-DAMDGPU_TARGETS=gfx803;gfx900;gfx906:xnack-;gfx908:xnack-;gfx90a:xnack+;gfx90a:xnack-;gfx940;gfx941;gfx942;gfx1010;gfx1012;gfx1030;gfx1100;gfx1101;gfx1102"
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON"
           ];
         };
         apps.llama-server = {
@@ -129,10 +124,6 @@
         apps.default = self.apps.${system}.llama;
         devShells.default = pkgs.mkShell {
           buildInputs = [ llama-python ];
-          packages = nativeBuildInputs ++ osSpecific;
-        };
-        devShells.extra = pkgs.mkShell {
-          buildInputs = [ llama-python-extra ];
           packages = nativeBuildInputs ++ osSpecific;
         };
       });

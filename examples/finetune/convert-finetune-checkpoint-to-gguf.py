@@ -3,7 +3,9 @@
 
 import argparse
 import gguf
+import os
 import struct
+import sys
 import numpy as np
 from pathlib import Path
 

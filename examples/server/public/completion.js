@@ -94,10 +94,6 @@ export async function* llama(prompt, params = {}, config = {}) {
               break;
             }
           }
-          if (result.error) {
-            result.error = JSON.parse(result.error);
-            console.error(`llama.cpp error: ${result.error.content}`);
-          }
         }
       }
     }

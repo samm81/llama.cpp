@@ -548,35 +548,35 @@ static void randomize_lora(struct my_llama_lora * lora, int seed, float mean, fl
     struct random_normal_distribution * rnd = init_random_normal_distribution(seed, mean, std, min, max);
 
     randomize_tensor_normal(lora->tok_embeddings_a, rnd);
-    ggml_set_zero(lora->tok_embeddings_b);
+    randomize_tensor_normal(lora->tok_embeddings_b, rnd);
     randomize_tensor_normal(lora->norm_a,           rnd);
-    ggml_set_zero(lora->norm_b);
+    randomize_tensor_normal(lora->norm_b,           rnd);
     randomize_tensor_normal(lora->output_a,         rnd);
-    ggml_set_zero(lora->output_b);
+    randomize_tensor_normal(lora->output_b,         rnd);
 
     for (uint32_t i = 0; i < n_layer; ++i) {
         auto & layer = lora->layers[i];
         randomize_tensor_normal(layer.attention_norm_a, rnd);
-        ggml_set_zero(layer.attention_norm_b);
+        randomize_tensor_normal(layer.attention_norm_b, rnd);
 
         randomize_tensor_normal(layer.wq_a, rnd);
-        ggml_set_zero(layer.wq_b);
+        randomize_tensor_normal(layer.wq_b, rnd);
         randomize_tensor_normal(layer.wk_a, rnd);
-        ggml_set_zero(layer.wk_b);
+        randomize_tensor_normal(layer.wk_b, rnd);
         randomize_tensor_normal(layer.wv_a, rnd);
-        ggml_set_zero(layer.wv_b);
+        randomize_tensor_normal(layer.wv_b, rnd);
         randomize_tensor_normal(layer.wo_a, rnd);
-        ggml_set_zero(layer.wo_b);
+        randomize_tensor_normal(layer.wo_b, rnd);
 
         randomize_tensor_normal(layer.ffn_norm_a, rnd);
-        ggml_set_zero(layer.ffn_norm_b);
+        randomize_tensor_normal(layer.ffn_norm_b, rnd);
 
         randomize_tensor_normal(layer.w1_a, rnd);
-        ggml_set_zero(layer.w1_b);
+        randomize_tensor_normal(layer.w1_b, rnd);
         randomize_tensor_normal(layer.w2_a, rnd);
-        ggml_set_zero(layer.w2_b);
+        randomize_tensor_normal(layer.w2_b, rnd);
         randomize_tensor_normal(layer.w3_a, rnd);
-        ggml_set_zero(layer.w3_b);
+        randomize_tensor_normal(layer.w3_b, rnd);
     }
 
     free_random_normal_distribution(rnd);
@@ -642,9 +642,8 @@ static struct ggml_tensor * llama_build_lora_finetune_graphs(
         const int rope_mode = 0;
 
         return ggml_rope_custom(ctx,
-            t, KQ_pos, n_rot, rope_mode, n_ctx, 0,
-            rope_freq_base, rope_freq_scale, 0.0f, 1.0f, 0.0f, 0.0f
-        );
+            t, KQ_pos, n_rot, rope_mode, n_ctx,
+            rope_freq_base, rope_freq_scale);
     };
 
     set_name(tokens_input, "tokens_input");
@@ -653,7 +652,7 @@ static struct ggml_tensor * llama_build_lora_finetune_graphs(
     GGML_ASSERT(tokens_input->type == GGML_TYPE_I32);
 
     auto add_to_f32 = [] (struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b) {
-        if (ggml_is_quantized(a->type) || a->type == GGML_TYPE_F16) {
+        if (ggml_is_quantized(a->type)) {
             return ggml_add_cast(ctx, a, b, GGML_TYPE_F32);
         } else if (a->type == GGML_TYPE_F32) {
             return ggml_add(ctx, a, b);
@@ -772,7 +771,7 @@ static struct ggml_tensor * llama_build_lora_finetune_graphs(
     if (enable_checkpointing) {
         ggml_build_backward_gradient_checkpointing(ctx, gf, gb, gb_tmp, checkpoints.data(), (int) checkpoints.size());
     } else {
-        ggml_graph_cpy(gf, gb);
+        *gb = *gf;
         ggml_build_backward_expand(ctx, gf, gb, true);
     }
 
@@ -1546,7 +1545,6 @@ int main(int argc, char ** argv) {
     srand(params.common.seed);
 
     struct llama_model_params llama_mparams = llama_model_default_params();
-    llama_mparams.n_gpu_layers = params.common.n_gpu_layers;
     llama_mparams.vocab_only = false;
 
     printf("%s: model base = '%s'\n", __func__, params.fn_model_base);
@@ -1604,7 +1602,6 @@ int main(int argc, char ** argv) {
     opt->params = ggml_opt_default_params(GGML_OPT_ADAM);
     opt->params.print_forward_graph     = false;
     opt->params.print_backward_graph    = false;
-    opt->params.graph_size              = LLAMA_TRAIN_MAX_NODES;
     opt->params.n_threads               = params.common.n_threads;
     opt->params.past                    = params.common.opt_past;
     opt->params.delta                   = params.common.opt_delta;
@@ -1731,9 +1728,11 @@ int main(int argc, char ** argv) {
     ggml_allocr_free(alloc);
 
     // context for compute tensors without their data
-    const size_t estimated_compute_size_wo_data = (
-            2*LLAMA_TRAIN_MAX_NODES*ggml_tensor_overhead() +
-            (params.common.use_checkpointing ? 3 : 2)*(GGML_OBJECT_SIZE+ggml_graph_overhead_custom(LLAMA_TRAIN_MAX_NODES, true))
+    size_t estimated_compute_size_wo_data = (
+        ggml_tensor_overhead()*GGML_MAX_NODES*2
+      + (GGML_OBJECT_SIZE+GGML_GRAPH_SIZE)*(
+            params.common.use_checkpointing ? 3 : 2
+        )
     );
     struct ggml_init_params ctx_compute_params = {
         estimated_compute_size_wo_data, // mem_size
@@ -1756,11 +1755,11 @@ int main(int argc, char ** argv) {
     for (unsigned order = 0; order < (unsigned) GGML_CGRAPH_EVAL_ORDER_COUNT; ++order) {
         ctx_compute = ggml_init(ctx_compute_params);
         alloc = ggml_allocr_new_measure(tensor_alignment);
-        gf = ggml_new_graph_custom(ctx_compute, LLAMA_TRAIN_MAX_NODES, true);
+        gf = ggml_new_graph(ctx_compute);
         gf->order = (enum ggml_cgraph_eval_order) order;
-        gb = ggml_new_graph_custom(ctx_compute, LLAMA_TRAIN_MAX_NODES, true);
+        gb = ggml_new_graph(ctx_compute);
         gb_tmp = params.common.use_checkpointing
-            ? ggml_new_graph_custom(ctx_compute, LLAMA_TRAIN_MAX_NODES, true)
+            ? ggml_new_graph(ctx_compute)
             : NULL;
         loss = llama_build_lora_finetune_graphs(
             &model, &lora, alloc, ctx_compute,
@@ -1789,11 +1788,11 @@ int main(int argc, char ** argv) {
     mem_compute_data.resize(max_compute_size);
     ctx_compute = ggml_init(ctx_compute_params);
     alloc = ggml_allocr_new(mem_compute_data.data(), mem_compute_data.size(), tensor_alignment);
-    gf = ggml_new_graph_custom(ctx_compute, LLAMA_TRAIN_MAX_NODES, true);
+    gf = ggml_new_graph(ctx_compute);
     gf->order = best_order;
-    gb = ggml_new_graph_custom(ctx_compute, LLAMA_TRAIN_MAX_NODES, true);
+    gb = ggml_new_graph(ctx_compute);
     gb_tmp = params.common.use_checkpointing
-        ? ggml_new_graph_custom(ctx_compute, LLAMA_TRAIN_MAX_NODES, true)
+        ? ggml_new_graph(ctx_compute)
         : NULL;
     loss = llama_build_lora_finetune_graphs(
         &model, &lora, alloc, ctx_compute,

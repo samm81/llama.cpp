@@ -1,5 +1,7 @@
 # tests with SPM tokenizer
 
+import os
+import sys
 import argparse
 
 from sentencepiece import SentencePieceProcessor

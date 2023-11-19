@@ -1,7 +1,7 @@
-import gguf  # noqa: F401
+import gguf
 
 # TODO: add tests
 
 
-def test_write_gguf() -> None:
+def test_write_gguf():
     pass

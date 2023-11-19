@@ -10,12 +10,10 @@
 *.gcno
 *.gcda
 *.dot
-*.bat
 *.metallib
 .DS_Store
 .build/
 .cache/
-.ccls-cache/
 .direnv/
 .envrc
 .swiftpm
@@ -46,7 +44,7 @@ models-mnt
 /infill
 /libllama.so
 /llama-bench
-/llava-cli
+/llava
 /main
 /metal
 /perplexity
@@ -64,9 +62,8 @@ models-mnt
 /speculative
 /parallel
 /train-text-from-scratch
-/tokenize
 /vdot
-/common/build-info.cpp
+build-info.h
 arm_neon.h
 compile_commands.json
 CMakeSettings.json

@@ -1,22 +1,7 @@
 #ifndef CLIP_H
 #define CLIP_H
 
-#include <stddef.h>
-#include <stdint.h>
-
-#ifdef LLAMA_SHARED
-#    if defined(_WIN32) && !defined(__MINGW32__)
-#        ifdef LLAMA_BUILD
-#            define CLIP_API __declspec(dllexport)
-#        else
-#            define CLIP_API __declspec(dllimport)
-#        endif
-#    else
-#        define CLIP_API __attribute__ ((visibility ("default")))
-#    endif
-#else
-#    define CLIP_API
-#endif
+#include "ggml.h"
 
 struct clip_ctx;
 
@@ -35,20 +20,19 @@ struct clip_vision_hparams {
     float eps;
 };
 
-/** load mmproj model */
-CLIP_API struct clip_ctx * clip_model_load(const char * fname, const int verbosity);
-/** free mmproj model */
-CLIP_API void clip_free(struct clip_ctx * ctx);
+struct clip_ctx * clip_model_load(const char * fname, const int verbosity);
 
-size_t clip_embd_nbytes(const struct clip_ctx * ctx);
-int clip_n_patches(const struct clip_ctx * ctx);
-int clip_n_mmproj_embd(const struct clip_ctx * ctx);
+void clip_free(struct clip_ctx * ctx);
+
+size_t clip_embd_nbytes(struct clip_ctx * ctx);
+int clip_n_patches(struct clip_ctx * ctx);
+int clip_n_mmproj_embd(struct clip_ctx * ctx);
 
 // RGB uint8 image
 struct clip_image_u8 {
     int nx;
     int ny;
-    uint8_t * data = NULL;
+    uint8_t * data;
     size_t size;
 };
 
@@ -57,7 +41,7 @@ struct clip_image_u8 {
 struct clip_image_f32 {
     int nx;
     int ny;
-    float * data = NULL;
+    float * data;
     size_t size;
 };
 
@@ -73,12 +57,7 @@ struct clip_image_f32_batch {
 
 struct clip_image_u8 * make_clip_image_u8();
 struct clip_image_f32 * make_clip_image_f32();
-CLIP_API void clip_image_u8_free(clip_image_u8 * img);
-CLIP_API void clip_image_f32_free(clip_image_f32 * img);
-CLIP_API bool clip_image_load_from_file(const char * fname, struct clip_image_u8 * img);
-/** interpret bytes as an image file with length bytes_length, and use the result to populate img */
-CLIP_API bool clip_image_load_from_bytes(const unsigned char * bytes, size_t bytes_length, struct clip_image_u8 * img);
-
+bool clip_image_load_from_file(const char * fname, struct clip_image_u8 * img);
 bool clip_image_preprocess(const struct clip_ctx * ctx, const struct clip_image_u8 * img, struct clip_image_f32 * res, const bool pad2square);
 bool clip_image_encode(const struct clip_ctx * ctx, const int n_threads, struct clip_image_f32 * img, float * vec);
 
